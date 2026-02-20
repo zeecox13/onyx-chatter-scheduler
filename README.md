@@ -35,7 +35,8 @@ Scheduling tool for the chat team: manage chatters, auto-generate schedules (wit
 
 ## Data
 
-- All data is stored under the `data/` folder as JSON (`chatters.json`, `schedules.json`, `timeoff.json`). No database required.
+- All data is stored under the `data/` folder as JSON (`chatters.json`, `schedules.json`, `timeoff.json`). No database required when running locally.
+- **GitHub & Vercel:** See [DEPLOY.md](DEPLOY.md) for pushing to GitHub and deploying to Vercel. Note: file-based storage does not persist on Vercel; use locally or add a database for production.
 
 ## Pages
 
