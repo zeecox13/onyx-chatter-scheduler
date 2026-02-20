@@ -54,11 +54,16 @@ export default function ChattersPage() {
   };
 
   const addChatter = async () => {
-    await fetch("/api/chatters", {
+    const res = await fetch("/api/chatters", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newChatter),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.message || data.error || "Could not save chatter. On Vercel, data does not persist—use “Load default team” or run locally.");
+      return;
+    }
     setShowAdd(false);
     setNewChatter({
       name: "",
@@ -79,10 +84,11 @@ export default function ChattersPage() {
     load();
   };
 
-  const seedChatters = async () => {
-    const res = await fetch("/api/seed", { method: "POST" });
+  const loadDefaultTeam = async (replace: boolean) => {
+    const res = await fetch(`/api/seed?replace=${replace}`, { method: "POST" });
     const data = await res.json();
-    alert(data.message || "Done.");
+    if (!res.ok) alert(data.message || data.error || "Failed to load team.");
+    else alert(data.message || "Done.");
     load();
   };
 
@@ -99,22 +105,24 @@ export default function ChattersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-amber-400">Chatters</h1>
-        <div className="flex gap-2">
-        {chatters.length === 0 && (
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={seedChatters}
+            onClick={() => loadDefaultTeam(chatters.length > 0)}
             className="rounded-lg border border-amber-500/50 px-4 py-2 text-sm text-amber-400 hover:bg-amber-500/10"
           >
-            Seed chatters
+            {chatters.length > 0 ? "Load default team (replace)" : "Load default team"}
           </button>
-        )}
-        <button
-          onClick={() => setShowAdd(true)}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-stone-900 hover:bg-amber-400"
-        >
-          Add chatter
-        </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-stone-900 hover:bg-amber-400"
+          >
+            Add chatter
+          </button>
+        </div>
       </div>
+      <p className="text-sm text-stone-500">
+        On Vercel, saves are not persistent. Use “Load default team” to restore Adebayo, Sheila, Yorkshare, Mary, Mae, Monah, Jenny, Akans, Owen, and Life. For lasting data, run locally (<code className="rounded bg-stone-700 px-1">npm run dev</code>).
+      </p>
       </div>
 
       {showAdd && (

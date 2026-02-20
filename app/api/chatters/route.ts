@@ -38,6 +38,14 @@ export async function POST(request: NextRequest) {
     updatedAt: now,
   };
   chatters.push(chatter);
-  saveChatters(chatters);
+  try {
+    saveChatters(chatters);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Save failed";
+    return NextResponse.json(
+      { error: msg, message: "Could not save. On Vercel, data does not persist—use “Load default team” or run the app locally." },
+      { status: 500 }
+    );
+  }
   return NextResponse.json(chatter);
 }
