@@ -123,7 +123,6 @@ export default function ChattersPage() {
       <p className="text-sm text-stone-500">
         On Vercel, saves are not persistent. Use “Load default team” to restore Adebayo, Sheila, Yorkshare, Mary, Mae, Monah, Jenny, Akans, Owen, and Life. For lasting data, run locally (<code className="rounded bg-stone-700 px-1">npm run dev</code>).
       </p>
-      </div>
 
       {showAdd && (
         <div className="rounded-xl border border-stone-700 bg-stone-800/50 p-6">
