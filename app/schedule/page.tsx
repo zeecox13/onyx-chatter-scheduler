@@ -6,6 +6,13 @@ import type { Schedule as ScheduleType, ScheduleSlot } from "@/lib/types";
 import type { Chatter } from "@/lib/types";
 import { SHIFT_LABELS, GROUP_LABELS } from "@/lib/types";
 import { DEFAULT_CHATTER_NAMES } from "@/lib/default-chatters";
+import { generateSchedule } from "@/lib/scheduler";
+import {
+  getChatters as getChattersFromStore,
+  getSchedules as getSchedulesFromStore,
+  getTimeOffRequests,
+  saveSchedules,
+} from "@/lib/local-store";
 
 export default function SchedulePage() {
   const [schedules, setSchedules] = useState<ScheduleType[]>([]);
@@ -15,36 +22,64 @@ export default function SchedulePage() {
   const [editingSlot, setEditingSlot] = useState<{ scheduleId: string; slotIndex: number; slot: ScheduleSlot } | null>(null);
 
   const load = () => {
-    fetch("/api/schedule")
-      .then((r) => r.json())
-      .then(setSchedules);
-    fetch("/api/chatters")
-      .then((r) => r.json())
-      .then(setChatters);
+    setSchedules(getSchedulesFromStore());
+    setChatters(getChattersFromStore());
   };
 
   useEffect(() => {
     load();
   }, []);
 
-  const generate = async (useCustom?: boolean) => {
-    setGenerating(true);
-    try {
-      const body =
-        useCustom && customRange.start && customRange.end
-          ? { startDate: customRange.start, endDate: customRange.end }
-          : {};
-      const res = await fetch("/api/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data.id) setSchedules((prev) => [...prev.filter((s) => s.id !== data.id), data]);
-      load();
-    } finally {
-      setGenerating(false);
+  const getDateRange = (useCustom: boolean) => {
+    if (useCustom && customRange.start && customRange.end) {
+      return { startDate: customRange.start, endDate: customRange.end };
     }
+    const today = new Date();
+    const day = today.getDate();
+    if (day >= 20) {
+      const next = addMonths(today, 1);
+      return {
+        startDate: format(startOfMonth(next), "yyyy-MM-dd"),
+        endDate: format(setDate(next, 15), "yyyy-MM-dd"),
+      };
+    }
+    if (day >= 7) {
+      const thisMonth = today;
+      return {
+        startDate: format(setDate(thisMonth, 16), "yyyy-MM-dd"),
+        endDate: format(endOfMonth(thisMonth), "yyyy-MM-dd"),
+      };
+    }
+    const next = addMonths(today, 1);
+    return {
+      startDate: format(startOfMonth(next), "yyyy-MM-dd"),
+      endDate: format(setDate(next, 15), "yyyy-MM-dd"),
+    };
+  };
+
+  const generate = (useCustom?: boolean) => {
+    setGenerating(true);
+    const { startDate, endDate } = getDateRange(!!useCustom);
+    const chattersList = getChattersFromStore();
+    const timeOff = getTimeOffRequests();
+    const slots = generateSchedule(chattersList, timeOff, startDate, endDate);
+    const now = new Date().toISOString();
+    const schedule: ScheduleType = {
+      id: "s-" + Date.now(),
+      startDate,
+      endDate,
+      slots,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const existing = getSchedulesFromStore();
+    const next = existing.filter(
+      (s) => !(s.startDate === startDate && s.endDate === endDate)
+    );
+    next.push(schedule);
+    setSchedules(next);
+    saveSchedules(next);
+    setGenerating(false);
   };
 
   const today = new Date();
@@ -57,19 +92,19 @@ export default function SchedulePage() {
   const nextEndFirst = format(setDate(addMonths(today, 1), 15), "yyyy-MM-dd");
   const nextEndSecond = format(endOfMonth(today), "yyyy-MM-dd");
 
-  const updateSlot = async (newChatterId: string) => {
+  const updateSlot = (newChatterId: string) => {
     if (!editingSlot) return;
-    await fetch("/api/schedule/slots", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        scheduleId: editingSlot.scheduleId,
-        slotIndex: editingSlot.slotIndex,
-        chatterId: newChatterId,
-      }),
+    const next = schedules.map((s) => {
+      if (s.id !== editingSlot.scheduleId) return s;
+      const slots = [...s.slots];
+      if (slots[editingSlot.slotIndex]) {
+        slots[editingSlot.slotIndex] = { ...slots[editingSlot.slotIndex], chatterId: newChatterId };
+      }
+      return { ...s, slots, updatedAt: new Date().toISOString() };
     });
+    setSchedules(next);
+    saveSchedules(next);
     setEditingSlot(null);
-    load();
   };
 
   const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? DEFAULT_CHATTER_NAMES[id] ?? id;

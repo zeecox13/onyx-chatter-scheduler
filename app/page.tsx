@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  getChatters as getChattersFromStore,
+  getSchedules as getSchedulesFromStore,
+  getTimeOffRequests,
+} from "@/lib/local-store";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -11,16 +16,13 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/chatters").then((r) => r.json()),
-      fetch("/api/time-off").then((r) => r.json()),
-      fetch("/api/schedule").then((r) => r.json()),
-    ]).then(([chatters, timeOff, schedules]) => {
-      setStats({
-        chatters: Array.isArray(chatters) ? chatters.length : 0,
-        pendingTimeOff: Array.isArray(timeOff) ? timeOff.filter((t: { status: string }) => t.status === "pending").length : 0,
-        schedules: Array.isArray(schedules) ? schedules.length : 0,
-      });
+    const chatters = getChattersFromStore();
+    const timeOff = getTimeOffRequests();
+    const schedules = getSchedulesFromStore();
+    setStats({
+      chatters: chatters.length,
+      pendingTimeOff: timeOff.filter((t) => t.status === "pending").length,
+      schedules: schedules.length,
     });
   }, []);
 

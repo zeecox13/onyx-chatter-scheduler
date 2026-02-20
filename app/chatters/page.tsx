@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import type { Chatter as ChatterType, ShiftId, GroupId } from "@/lib/types";
 import { SHIFT_LABELS, GROUP_LABELS } from "@/lib/types";
+import {
+  getChatters as getChattersFromStore,
+  saveChatters,
+} from "@/lib/local-store";
+import { DEFAULT_CHATTERS } from "@/lib/default-chatters";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -22,7 +27,7 @@ export default function ChattersPage() {
     notes: "",
   });
 
-  const load = () => fetch("/api/chatters").then((r) => r.json()).then(setChatters);
+  const load = () => setChatters(getChattersFromStore());
 
   useEffect(() => {
     load();
@@ -42,28 +47,41 @@ export default function ChattersPage() {
     });
   };
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     if (!editing) return;
-    await fetch(`/api/chatters/${editing}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    const next = chatters.map((c) =>
+      c.id === editing
+        ? {
+            ...c,
+            ...form,
+            updatedAt: new Date().toISOString(),
+          }
+        : c
+    );
+    setChatters(next);
+    saveChatters(next);
     setEditing(null);
-    load();
   };
 
-  const addChatter = async () => {
-    const res = await fetch("/api/chatters", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newChatter),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      alert(data.message || data.error || "Could not save chatter. On Vercel, data does not persist—use “Load default team” or run locally.");
-      return;
-    }
+  const addChatter = () => {
+    const id = "c-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
+    const now = new Date().toISOString();
+    const chatter: ChatterType = {
+      id,
+      name: newChatter.name.trim() || "New Chatter",
+      email: newChatter.email.trim() || undefined,
+      preferredShifts: newChatter.preferredShifts,
+      preferredDaysOff: newChatter.preferredDaysOff,
+      sph: newChatter.sph,
+      group: newChatter.group,
+      fillInOnly: newChatter.fillInOnly,
+      notes: newChatter.notes.trim() || undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const next = [...chatters, chatter];
+    setChatters(next);
+    saveChatters(next);
     setShowAdd(false);
     setNewChatter({
       name: "",
@@ -75,26 +93,22 @@ export default function ChattersPage() {
       fillInOnly: false,
       notes: "",
     });
-    load();
   };
 
-  const removeChatter = async (id: string) => {
+  const removeChatter = (id: string) => {
     if (!confirm("Remove this chatter?")) return;
-    await fetch(`/api/chatters/${id}`, { method: "DELETE" });
-    load();
+    const next = chatters.filter((c) => c.id !== id);
+    setChatters(next);
+    saveChatters(next);
   };
 
-  const loadDefaultTeam = async (replace: boolean) => {
-    const res = await fetch(`/api/seed?replace=${replace}`, { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.message || data.error || "Failed to load team.");
-      load();
-      return;
+  const loadDefaultTeam = (replace: boolean) => {
+    const list = replace ? [...DEFAULT_CHATTERS] : getChattersFromStore();
+    const toUse = list.length > 0 && !replace ? list : [...DEFAULT_CHATTERS];
+    if (replace || list.length === 0) {
+      setChatters(toUse);
+      saveChatters(toUse);
     }
-    if (Array.isArray(data.chatters)) setChatters(data.chatters);
-    else load();
-    alert(data.message || "Done.");
   };
 
   const toggleShift = (arr: ShiftId[], shift: ShiftId) => {
@@ -125,9 +139,6 @@ export default function ChattersPage() {
           </button>
         </div>
       </div>
-      <p className="text-sm text-stone-500">
-        On Vercel, saving new chatters is not available. Use “Load default team” to restore the list. Schedule generation always uses the same default team. For lasting data, run locally (<code className="rounded bg-stone-700 px-1">npm run dev</code>).
-      </p>
 
       {showAdd && (
         <div className="rounded-xl border border-stone-700 bg-stone-800/50 p-6">

@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { parseISO, isWithinInterval } from "date-fns";
 import type { TimeOffRequest } from "@/lib/types";
 import type { Chatter } from "@/lib/types";
+import { findReplacement } from "@/lib/scheduler";
+import {
+  getChatters as getChattersFromStore,
+  getSchedules as getSchedulesFromStore,
+  getTimeOffRequests,
+  saveTimeOffRequests,
+  saveSchedules,
+} from "@/lib/local-store";
 
 export default function TimeOffPage() {
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
@@ -16,12 +25,8 @@ export default function TimeOffPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const load = () => {
-    fetch("/api/time-off")
-      .then((r) => r.json())
-      .then(setRequests);
-    fetch("/api/chatters")
-      .then((r) => r.json())
-      .then(setChatters);
+    setRequests(getTimeOffRequests());
+    setChatters(getChattersFromStore());
   };
 
   useEffect(() => {
@@ -31,30 +36,81 @@ export default function TimeOffPage() {
   const submitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.chatterId || !form.startDate || !form.endDate) return;
+    const chatter = chatters.find((c) => c.id === form.chatterId);
+    if (!chatter) return;
     setSubmitting(true);
+    const id = "to-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
+    const now = new Date().toISOString();
+    const req: TimeOffRequest = {
+      id,
+      chatterId: form.chatterId,
+      chatterName: chatter.name,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      reason: form.reason.trim() || undefined,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const next = [...requests, req];
+    setRequests(next);
+    saveTimeOffRequests(next);
+    setForm({ chatterId: "", startDate: "", endDate: "", reason: "" });
     try {
-      await fetch("/api/time-off", {
+      await fetch("/api/time-off/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          chatterName: chatter.name,
+          startDate: req.startDate,
+          endDate: req.endDate,
+          reason: req.reason,
+        }),
       });
-      setForm({ chatterId: "", startDate: "", endDate: "", reason: "" });
-      load();
-    } finally {
-      setSubmitting(false);
+    } catch {
+      // email optional
+    }
+    setSubmitting(false);
+  };
+
+  const review = (id: string, status: "approved" | "denied") => {
+    const now = new Date().toISOString();
+    const next = requests.map((r) =>
+      r.id === id
+        ? { ...r, status, updatedAt: now, reviewedAt: now, reviewedBy: "admin" }
+        : r
+    );
+    setRequests(next);
+    saveTimeOffRequests(next);
+
+    if (status === "approved") {
+      const req = requests.find((r) => r.id === id);
+      if (!req) return;
+      const chattersList = getChattersFromStore();
+      const timeOffList = next;
+      const schedules = getSchedulesFromStore();
+      const start = parseISO(req.startDate);
+      const end = parseISO(req.endDate);
+      let changed = false;
+      const updated = schedules.map((s) => {
+        let scheduleChanged = false;
+        const newSlots = s.slots.map((slot) => {
+          if (slot.chatterId !== req.chatterId) return slot;
+          const d = parseISO(slot.date);
+          if (!isWithinInterval(d, { start, end })) return slot;
+          const replacement = findReplacement(chattersList, timeOffList, slot, req.chatterId);
+          if (replacement) {
+            changed = true;
+            scheduleChanged = true;
+            return { ...slot, chatterId: replacement.id };
+          }
+          return slot;
+        });
+        return scheduleChanged ? { ...s, slots: newSlots, updatedAt: now } : s;
+      });
+      if (changed) saveSchedules(updated);
     }
   };
-
-  const review = async (id: string, status: "approved" | "denied") => {
-    await fetch(`/api/time-off/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    load();
-  };
-
-  const pending = requests.filter((r) => r.status === "pending");
 
   return (
     <div className="space-y-8">
@@ -63,7 +119,7 @@ export default function TimeOffPage() {
       <div className="rounded-xl border border-stone-700 bg-stone-800/50 p-6">
         <h2 className="mb-4 font-semibold text-stone-200">Request time off</h2>
         <p className="mb-4 text-sm text-stone-400">
-          Submitting sends an email to zee@onyxspire.com. You can approve or deny in the list below; approving will auto-find a replacement on the schedule.
+          Submit a request. If email is configured, zee@onyxspire.com is notified. Approve or deny below; approving auto-finds a replacement on the schedule.
         </p>
         <form onSubmit={submitRequest} className="flex flex-wrap gap-4">
           <div>
