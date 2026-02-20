@@ -43,7 +43,11 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Save failed";
     return NextResponse.json(
-      { error: msg, message: "Could not save. On Vercel, data does not persist—use “Load default team” or run the app locally." },
+      {
+        error: msg,
+        message:
+          "Could not save. On Vercel, add Redis: Vercel → Project → Settings → Environment Variables → add KV_REST_API_URL and KV_REST_API_TOKEN from console.upstash.com, then redeploy.",
+      },
       { status: 500 }
     );
   }
