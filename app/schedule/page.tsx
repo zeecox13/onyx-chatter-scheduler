@@ -1,7 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { format, parseISO, addMonths, startOfMonth, endOfMonth, setDate } from "date-fns";
+import { useEffect, useState, useMemo } from "react";
+import {
+  format,
+  parseISO,
+  addMonths,
+  addDays,
+  startOfMonth,
+  endOfMonth,
+  setDate,
+  getDay,
+  isSameMonth,
+  isBefore,
+} from "date-fns";
 import type { Schedule as ScheduleType, ScheduleSlot } from "@/lib/types";
 import type { Chatter } from "@/lib/types";
 import { SHIFT_LABELS, GROUP_LABELS } from "@/lib/types";
@@ -14,12 +25,38 @@ import {
   saveSchedules,
 } from "@/lib/local-store";
 
+const CHATTER_COLORS = [
+  "bg-emerald-600/80 text-white",
+  "bg-sky-600/80 text-white",
+  "bg-amber-600/80 text-white",
+  "bg-violet-600/80 text-white",
+  "bg-rose-500/80 text-white",
+  "bg-lime-600/80 text-white",
+  "bg-orange-500/80 text-white",
+  "bg-teal-600/80 text-white",
+  "bg-fuchsia-600/80 text-white",
+  "bg-amber-700/90 text-white",
+  "bg-indigo-500/80 text-white",
+  "bg-pink-500/80 text-white",
+];
+
+function getChatterColor(chatterId: string, chatterIds: string[]): string {
+  const idx = chatterIds.indexOf(chatterId);
+  if (idx === -1) return "bg-stone-600/60 text-stone-300";
+  return CHATTER_COLORS[idx % CHATTER_COLORS.length];
+}
+
 export default function SchedulePage() {
   const [schedules, setSchedules] = useState<ScheduleType[]>([]);
   const [chatters, setChatters] = useState<Chatter[]>([]);
   const [generating, setGenerating] = useState(false);
   const [customRange, setCustomRange] = useState({ start: "", end: "" });
-  const [editingSlot, setEditingSlot] = useState<{ scheduleId: string; slotIndex: number; slot: ScheduleSlot } | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => format(new Date(), "yyyy-MM"));
+  const [editingSlot, setEditingSlot] = useState<{
+    scheduleId: string;
+    slotIndex: number;
+    slot: ScheduleSlot;
+  } | null>(null);
 
   const load = () => {
     setSchedules(getSchedulesFromStore());
@@ -29,6 +66,16 @@ export default function SchedulePage() {
   useEffect(() => {
     load();
   }, []);
+
+  const chatterName = (id: string) =>
+    chatters.find((c) => c.id === id)?.name ?? DEFAULT_CHATTER_NAMES[id] ?? id;
+
+  const chatterIdsForColor = useMemo(() => {
+    const ids = new Set<string>();
+    schedules.forEach((s) => s.slots.forEach((slot) => ids.add(slot.chatterId)));
+    chatters.forEach((c) => ids.add(c.id));
+    return Array.from(ids).sort();
+  }, [schedules, chatters]);
 
   const getDateRange = (useCustom: boolean) => {
     if (useCustom && customRange.start && customRange.end) {
@@ -79,6 +126,7 @@ export default function SchedulePage() {
     next.push(schedule);
     setSchedules(next);
     saveSchedules(next);
+    setCalendarMonth(format(parseISO(startDate), "yyyy-MM"));
     setGenerating(false);
   };
 
@@ -86,11 +134,6 @@ export default function SchedulePage() {
   const day = today.getDate();
   const suggestFirstHalf = day >= 20;
   const suggestSecondHalf = day >= 7 && day < 20;
-  const nextStart = suggestFirstHalf
-    ? format(startOfMonth(addMonths(today, 1)), "yyyy-MM-dd")
-    : format(setDate(addMonths(today, 1), 1), "yyyy-MM-dd");
-  const nextEndFirst = format(setDate(addMonths(today, 1), 15), "yyyy-MM-dd");
-  const nextEndSecond = format(endOfMonth(today), "yyyy-MM-dd");
 
   const updateSlot = (newChatterId: string) => {
     if (!editingSlot) return;
@@ -98,7 +141,10 @@ export default function SchedulePage() {
       if (s.id !== editingSlot.scheduleId) return s;
       const slots = [...s.slots];
       if (slots[editingSlot.slotIndex]) {
-        slots[editingSlot.slotIndex] = { ...slots[editingSlot.slotIndex], chatterId: newChatterId };
+        slots[editingSlot.slotIndex] = {
+          ...slots[editingSlot.slotIndex],
+          chatterId: newChatterId,
+        };
       }
       return { ...s, slots, updatedAt: new Date().toISOString() };
     });
@@ -107,7 +153,51 @@ export default function SchedulePage() {
     setEditingSlot(null);
   };
 
-  const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? DEFAULT_CHATTER_NAMES[id] ?? id;
+  const monthStart = startOfMonth(parseISO(calendarMonth + "-01"));
+  const monthEnd = endOfMonth(monthStart);
+  const calendarWeeks = useMemo(() => {
+    const weeks: Date[][] = [];
+    let d = addDays(monthStart, -getDay(monthStart));
+    while (isBefore(d, monthEnd) || weeks.length < 5) {
+      const week: Date[] = [];
+      for (let i = 0; i < 7; i++) {
+        week.push(d);
+        d = addDays(d, 1);
+      }
+      weeks.push(week);
+      if (weeks.length >= 6) break;
+    }
+    return weeks;
+  }, [calendarMonth]);
+
+  const slotsByDateAndSchedule = useMemo(() => {
+    const byDate: Record<
+      string,
+      Array<{ slot: ScheduleSlot; scheduleId: string; slotIndex: number }>
+    > = {};
+    schedules.forEach((s) => {
+      s.slots.forEach((slot, idx) => {
+        if (!byDate[slot.date]) byDate[slot.date] = [];
+        const key = `${slot.shift}-${slot.group ?? "n"}`;
+        const has = byDate[slot.date].some(
+          (e) => e.slot.shift === slot.shift && (e.slot.group ?? 0) === (slot.group ?? 0)
+        );
+        if (!has) byDate[slot.date].push({ slot, scheduleId: s.id, slotIndex: idx });
+      });
+    });
+    return byDate;
+  }, [schedules]);
+
+  const getSlotInfo = (dateStr: string, shift: "night" | "day" | "swing", group?: 1 | 2 | 3) => {
+    const list = slotsByDateAndSchedule[dateStr];
+    if (!list) return null;
+    const entry = list.find(
+      (e) => e.slot.shift === shift && (e.slot.group ?? 0) === (group ?? 0)
+    );
+    return entry ? { slot: entry.slot, scheduleId: entry.scheduleId, slotIndex: entry.slotIndex } : null;
+  };
+
+  const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   return (
     <div className="space-y-6">
@@ -116,8 +206,8 @@ export default function SchedulePage() {
       <div className="rounded-xl border border-stone-700 bg-stone-800/50 p-6">
         <h2 className="mb-4 font-semibold text-stone-200">Generate schedule</h2>
         <p className="mb-2 text-sm text-stone-400">
-          On the <strong>20th</strong>: generate for 1st–15th of the following month. On the{" "}
-          <strong>7th</strong>: generate for 16th–end of current month.
+          On the <strong>20th</strong>: 1st–15th next month. On the{" "}
+          <strong>7th</strong>: 16th–end of month.
         </p>
         <div className="mb-4 flex flex-wrap items-end gap-4">
           <div>
@@ -126,7 +216,9 @@ export default function SchedulePage() {
               type="date"
               className="rounded border border-stone-600 bg-stone-800 px-3 py-2 text-white"
               value={customRange.start}
-              onChange={(e) => setCustomRange((r) => ({ ...r, start: e.target.value }))}
+              onChange={(e) =>
+                setCustomRange((r) => ({ ...r, start: e.target.value }))
+              }
             />
           </div>
           <div>
@@ -135,7 +227,9 @@ export default function SchedulePage() {
               type="date"
               className="rounded border border-stone-600 bg-stone-800 px-3 py-2 text-white"
               value={customRange.end}
-              onChange={(e) => setCustomRange((r) => ({ ...r, end: e.target.value }))}
+              onChange={(e) =>
+                setCustomRange((r) => ({ ...r, end: e.target.value }))
+              }
             />
           </div>
           <button
@@ -150,12 +244,12 @@ export default function SchedulePage() {
             disabled={generating}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-stone-900 hover:bg-amber-400 disabled:opacity-50"
           >
-            {generating ? "Generating…" : "Auto-generate (suggested range)"}
+            {generating ? "Generating…" : "Auto-generate"}
           </button>
         </div>
         {suggestFirstHalf && (
           <p className="text-sm text-amber-400/90">
-            Suggested: 1st–15th next month ({nextStart} – {nextEndFirst})
+            Suggested: 1st–15th next month
           </p>
         )}
         {suggestSecondHalf && (
@@ -171,7 +265,8 @@ export default function SchedulePage() {
             <h3 className="mb-2 font-semibold">Replace on this slot</h3>
             <p className="mb-4 text-sm text-stone-400">
               {editingSlot.slot.date} · {SHIFT_LABELS[editingSlot.slot.shift]}
-              {editingSlot.slot.group != null && ` · ${GROUP_LABELS[editingSlot.slot.group]}`}
+              {editingSlot.slot.group != null &&
+                ` · ${GROUP_LABELS[editingSlot.slot.group]}`}
             </p>
             <select
               className="mb-4 w-full rounded border border-stone-600 bg-stone-700 px-3 py-2 text-white"
@@ -179,7 +274,9 @@ export default function SchedulePage() {
               onChange={(e) => updateSlot(e.target.value)}
             >
               {chatters.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
             </select>
             <button
@@ -192,119 +289,220 @@ export default function SchedulePage() {
         </div>
       )}
 
-      <div className="space-y-6">
-        {schedules.map((s) => {
-          const byDate = s.slots.reduce(
-            (acc, slot) => {
-              if (!acc[slot.date]) acc[slot.date] = [];
-              acc[slot.date].push(slot);
-              return acc;
-            },
-            {} as Record<string, ScheduleSlot[]>
-          );
-          const dates = Object.keys(byDate).sort();
-          return (
-            <div key={s.id} className="rounded-xl border border-stone-700 bg-stone-800/30 overflow-hidden">
-              <div className="border-b border-stone-700 bg-stone-800/80 px-4 py-3 font-semibold text-stone-200">
-                {s.startDate} – {s.endDate}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-stone-700 bg-stone-800/50">
-                      <th className="p-2 font-medium text-stone-400">Date</th>
-                      <th className="p-2 font-medium text-stone-400">12am–8am</th>
-                      <th className="p-2 font-medium text-stone-400">8am–4pm (VIP)</th>
-                      <th className="p-2 font-medium text-stone-400">8am–4pm (Mid)</th>
-                      <th className="p-2 font-medium text-stone-400">8am–4pm (Pitch)</th>
-                      <th className="p-2 font-medium text-stone-400">4pm–12am (VIP)</th>
-                      <th className="p-2 font-medium text-stone-400">4pm–12am (Mid)</th>
-                      <th className="p-2 font-medium text-stone-400">4pm–12am (Pitch)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dates.map((date) => {
-                      const slots = byDate[date];
-                      const night = slots.find((x) => x.shift === "night");
-                      const day1 = slots.find((x) => x.shift === "day" && x.group === 1);
-                      const day2 = slots.find((x) => x.shift === "day" && x.group === 2);
-                      const day3 = slots.find((x) => x.shift === "day" && x.group === 3);
-                      const swing1 = slots.find((x) => x.shift === "swing" && x.group === 1);
-                      const swing2 = slots.find((x) => x.shift === "swing" && x.group === 2);
-                      const swing3 = slots.find((x) => x.shift === "swing" && x.group === 3);
-                      const getIdx = (slot: ScheduleSlot | undefined) =>
-                        slot
-                          ? s.slots.findIndex(
-                              (x) =>
-                                x.date === slot.date &&
-                                x.shift === slot.shift &&
-                                (x.group ?? 0) === (slot.group ?? 0) &&
-                                x.chatterId === slot.chatterId
-                            )
-                          : -1;
-                      return (
-                        <tr key={date} className="border-b border-stone-700/50 hover:bg-stone-800/20">
-                          <td className="p-2 font-medium text-stone-300">
-                            {format(parseISO(date), "EEE M/d")}
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={night}
-                              name={night ? chatterName(night.chatterId) : "—"}
-                              onEdit={() => night && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(night), slot: night })}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={day1}
-                              name={day1 ? chatterName(day1.chatterId) : "—"}
-                              onEdit={() => day1 && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(day1), slot: day1 })}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={day2}
-                              name={day2 ? chatterName(day2.chatterId) : "—"}
-                              onEdit={() => day2 && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(day2), slot: day2 })}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={day3}
-                              name={day3 ? chatterName(day3.chatterId) : "—"}
-                              onEdit={() => day3 && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(day3), slot: day3 })}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={swing1}
-                              name={swing1 ? chatterName(swing1.chatterId) : "—"}
-                              onEdit={() => swing1 && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(swing1), slot: swing1 })}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={swing2}
-                              name={swing2 ? chatterName(swing2.chatterId) : "—"}
-                              onEdit={() => swing2 && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(swing2), slot: swing2 })}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <SlotCell
-                              slot={swing3}
-                              name={swing3 ? chatterName(swing3.chatterId) : "—"}
-                              onEdit={() => swing3 && setEditingSlot({ scheduleId: s.id, slotIndex: getIdx(swing3), slot: swing3 })}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
+      <div className="rounded-xl border border-stone-700 bg-stone-800/30 overflow-hidden">
+        <div className="flex items-center justify-between border-b border-stone-700 bg-stone-800/80 px-4 py-3">
+          <h2 className="font-semibold text-stone-200">
+            {format(monthStart, "MMMM yyyy")}
+          </h2>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setCalendarMonth(
+                  format(addMonths(parseISO(calendarMonth + "-01"), -1), "yyyy-MM")
+                )
+              }
+              className="rounded border border-stone-600 px-3 py-1 text-sm hover:bg-stone-700"
+            >
+              ← Prev
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setCalendarMonth(
+                  format(addMonths(parseISO(calendarMonth + "-01"), 1), "yyyy-MM")
+                )
+              }
+              className="rounded border border-stone-600 px-3 py-1 text-sm hover:bg-stone-700"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+        <div className="overflow-x-auto p-2">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                {WEEKDAY_NAMES.map((name) => (
+                  <th
+                    key={name}
+                    className="border border-stone-600 bg-stone-800/80 p-1 text-center font-medium text-stone-400"
+                  >
+                    {name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {calendarWeeks.map((week, wi) => (
+                <tr key={wi}>
+                  {week.map((date) => {
+                    const dateStr = format(date, "yyyy-MM-dd");
+                    const inMonth = isSameMonth(date, monthStart);
+                    const night = getSlotInfo(dateStr, "night");
+                    const day1 = getSlotInfo(dateStr, "day", 1);
+                    const day2 = getSlotInfo(dateStr, "day", 2);
+                    const day3 = getSlotInfo(dateStr, "day", 3);
+                    const swing1 = getSlotInfo(dateStr, "swing", 1);
+                    const swing2 = getSlotInfo(dateStr, "swing", 2);
+                    const swing3 = getSlotInfo(dateStr, "swing", 3);
+                    return (
+                      <td
+                        key={dateStr}
+                        className={`min-w-[120px] max-w-[160px] border border-stone-600 align-top ${
+                          inMonth ? "bg-stone-800/40" : "bg-stone-900/60"
+                        }`}
+                      >
+                        <div className="p-1">
+                          <div
+                            className={`mb-1 text-center font-medium ${
+                              inMonth ? "text-stone-200" : "text-stone-500"
+                            }`}
+                          >
+                            {format(date, "M/d")}
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="grid grid-cols-3 gap-0.5">
+                              <DayCell
+                                info={night}
+                                chatterName={chatterName}
+                                colorClass={night ? getChatterColor(night.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  night &&
+                                  setEditingSlot({
+                                    scheduleId: night.scheduleId,
+                                    slotIndex: night.slotIndex,
+                                    slot: night.slot,
+                                  })
+                                }
+                                label="12a-8a"
+                              />
+                              <DayCell
+                                info={null}
+                                colorClass="opacity-0"
+                                onEdit={() => {}}
+                                label=""
+                              />
+                              <DayCell
+                                info={null}
+                                colorClass="opacity-0"
+                                onEdit={() => {}}
+                                label=""
+                              />
+                            </div>
+                            <div className="grid grid-cols-3 gap-0.5">
+                              <DayCell
+                                info={day1}
+                                chatterName={chatterName}
+                                colorClass={day1 ? getChatterColor(day1.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  day1 &&
+                                  setEditingSlot({
+                                    scheduleId: day1.scheduleId,
+                                    slotIndex: day1.slotIndex,
+                                    slot: day1.slot,
+                                  })
+                                }
+                                label=""
+                              />
+                              <DayCell
+                                info={day2}
+                                chatterName={chatterName}
+                                colorClass={day2 ? getChatterColor(day2.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  day2 &&
+                                  setEditingSlot({
+                                    scheduleId: day2.scheduleId,
+                                    slotIndex: day2.slotIndex,
+                                    slot: day2.slot,
+                                  })
+                                }
+                                label=""
+                              />
+                              <DayCell
+                                info={day3}
+                                chatterName={chatterName}
+                                colorClass={day3 ? getChatterColor(day3.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  day3 &&
+                                  setEditingSlot({
+                                    scheduleId: day3.scheduleId,
+                                    slotIndex: day3.slotIndex,
+                                    slot: day3.slot,
+                                  })
+                                }
+                                label=""
+                              />
+                            </div>
+                            <div className="grid grid-cols-3 gap-0.5">
+                              <DayCell
+                                info={swing1}
+                                chatterName={chatterName}
+                                colorClass={swing1 ? getChatterColor(swing1.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  swing1 &&
+                                  setEditingSlot({
+                                    scheduleId: swing1.scheduleId,
+                                    slotIndex: swing1.slotIndex,
+                                    slot: swing1.slot,
+                                  })
+                                }
+                                label=""
+                              />
+                              <DayCell
+                                info={swing2}
+                                chatterName={chatterName}
+                                colorClass={swing2 ? getChatterColor(swing2.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  swing2 &&
+                                  setEditingSlot({
+                                    scheduleId: swing2.scheduleId,
+                                    slotIndex: swing2.slotIndex,
+                                    slot: swing2.slot,
+                                  })
+                                }
+                                label=""
+                              />
+                              <DayCell
+                                info={swing3}
+                                chatterName={chatterName}
+                                colorClass={swing3 ? getChatterColor(swing3.slot.chatterId, chatterIdsForColor) : ""}
+                                onEdit={() =>
+                                  swing3 &&
+                                  setEditingSlot({
+                                    scheduleId: swing3.scheduleId,
+                                    slotIndex: swing3.slotIndex,
+                                    slot: swing3.slot,
+                                  })
+                                }
+                                label=""
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-stone-700 bg-stone-800/80 px-4 py-3">
+          <p className="mb-2 text-xs text-stone-500">
+            Rows: 12am–8am (1) · 8am–4pm G1/G2/G3 · 4pm–12am G1/G2/G3. Click a name to edit.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {chatterIdsForColor.map((id) => (
+              <span
+                key={id}
+                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${getChatterColor(id, chatterIdsForColor)}`}
+              >
+                {chatterName(id)}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {schedules.length === 0 && (
@@ -314,26 +512,38 @@ export default function SchedulePage() {
   );
 }
 
-function SlotCell({
-  slot,
-  name,
+function DayCell({
+  info,
+  chatterName: chatterNameFn,
+  colorClass,
   onEdit,
+  label,
 }: {
-  slot: ScheduleSlot | undefined;
-  name: string;
+  info: { slot: ScheduleSlot; scheduleId: string; slotIndex: number } | null;
+  chatterName?: (id: string) => string;
+  colorClass: string;
   onEdit: () => void;
+  label: string;
 }) {
-  if (!slot) return <span className="text-stone-500">—</span>;
-  return (
-    <span className="flex items-center gap-1">
-      <span>{name}</span>
-      <button
-        type="button"
-        onClick={onEdit}
-        className="text-xs text-amber-400 hover:underline"
+  if (!info) {
+    return (
+      <div
+        className={`rounded px-1 py-0.5 text-center text-[10px] ${label ? "text-stone-500" : ""}`}
+        title={label}
       >
-        Edit
-      </button>
-    </span>
+        {label || "—"}
+      </div>
+    );
+  }
+  const name = chatterNameFn ? chatterNameFn(info.slot.chatterId) : info.slot.chatterId;
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      className={`rounded px-1 py-0.5 text-center text-[10px] font-medium transition hover:ring-1 hover:ring-amber-400 ${colorClass}`}
+      title={`${name} (click to edit)`}
+    >
+      {name.length > 8 ? name.slice(0, 7) + "…" : name}
+    </button>
   );
 }
