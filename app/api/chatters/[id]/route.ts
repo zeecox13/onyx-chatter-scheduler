@@ -19,7 +19,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const chatters = getChatters();
+  const chatters = await getChatters();
   const c = chatters.find((x) => x.id === id);
   if (!c) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(c);
@@ -31,7 +31,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const chatters = getChatters();
+  const chatters = await getChatters();
   const idx = chatters.findIndex((x) => x.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const prev = chatters[idx];
@@ -48,7 +48,7 @@ export async function PUT(
     updatedAt: new Date().toISOString(),
   };
   chatters[idx] = updated;
-  saveChatters(chatters);
+  await saveChatters(chatters);
   return NextResponse.json(updated);
 }
 
@@ -57,7 +57,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const chatters = getChatters().filter((x) => x.id !== id);
-  saveChatters(chatters);
+  const chatters = (await getChatters()).filter((x) => x.id !== id);
+  await saveChatters(chatters);
   return NextResponse.json({ ok: true });
 }

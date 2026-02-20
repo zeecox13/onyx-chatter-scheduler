@@ -4,7 +4,7 @@ import { getChatters, getTimeOffRequests, saveTimeOffRequests } from "@/lib/stor
 const NOTIFY_EMAIL = "zee@onyxspire.com";
 
 export async function GET() {
-  const requests = getTimeOffRequests();
+  const requests = await getTimeOffRequests();
   return NextResponse.json(requests);
 }
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const chatters = getChatters();
+  const chatters = await getChatters();
   const chatter = chatters.find((c) => c.id === chatterId);
   if (!chatter) {
     return NextResponse.json({ error: "Chatter not found" }, { status: 404 });
@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
     createdAt: now,
     updatedAt: now,
   };
-  const requests = getTimeOffRequests();
+  const requests = await getTimeOffRequests();
   requests.push(req);
-  saveTimeOffRequests(requests);
+  await saveTimeOffRequests(requests);
 
   // Dynamic import so Resend is not loaded at build time (avoids "Missing API key" when env is unset)
   const { sendTimeOffNotification } = await import("@/lib/email");

@@ -22,7 +22,7 @@ function buildDefaultChatters(now: string): Chatter[] {
 export async function POST(request: NextRequest) {
   const url = new URL(request.url);
   const replace = url.searchParams.get("replace") === "true";
-  const existing = getChatters();
+  const existing = await getChatters();
   const now = new Date().toISOString();
   const chatters = buildDefaultChatters(now);
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    saveChatters(chatters);
+    await saveChatters(chatters);
     return NextResponse.json({
       message: replace ? "Replaced with default team (10 chatters)." : "Loaded default team (10 chatters).",
       count: chatters.length,

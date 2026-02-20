@@ -12,7 +12,7 @@ export async function PATCH(request: NextRequest) {
       { status: 400 }
     );
   }
-  const schedules = getSchedules();
+  const schedules = await getSchedules();
   const s = schedules.find((x) => x.id === scheduleId);
   if (!s) return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
   const idx = Number(slotIndex);
@@ -21,6 +21,6 @@ export async function PATCH(request: NextRequest) {
   }
   if (chatterId !== undefined) s.slots[idx].chatterId = String(chatterId);
   s.updatedAt = new Date().toISOString();
-  saveSchedules(schedules);
+  await saveSchedules(schedules);
   return NextResponse.json(s.slots[idx]);
 }

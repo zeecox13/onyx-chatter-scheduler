@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getChatters, getSchedules, saveSchedules } from "@/lib/store";
+import { getChatters, getSchedules, getTimeOffRequests, saveSchedules } from "@/lib/store";
 import { generateSchedule } from "@/lib/scheduler";
 import { addMonths, startOfMonth, endOfMonth, setDate, format } from "date-fns";
 
@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const start = searchParams.get("start");
   const end = searchParams.get("end");
-  const schedules = getSchedules();
+  const schedules = await getSchedules();
   if (start && end) {
     const inRange = schedules.filter(
       (s) => (s.startDate >= start && s.startDate <= end) || (s.endDate >= start && s.endDate <= end)
@@ -40,8 +40,12 @@ export async function POST(request: NextRequest) {
     startDate = format(startOfMonth(next), "yyyy-MM-dd");
     endDate = format(setDate(next, 15), "yyyy-MM-dd");
   }
-  const chatters = getChatters();
-  const slots = generateSchedule(chatters, startDate, endDate);
+  const [chatters, timeOffRequests, schedulesExisting] = await Promise.all([
+    getChatters(),
+    getTimeOffRequests(),
+    getSchedules(),
+  ]);
+  const slots = generateSchedule(chatters, timeOffRequests, startDate, endDate);
   const id = "s-" + Date.now();
   const now = new Date().toISOString();
   const schedule = {
@@ -52,10 +56,10 @@ export async function POST(request: NextRequest) {
     createdAt: now,
     updatedAt: now,
   };
-  const schedules = getSchedules().filter(
+  const schedules = schedulesExisting.filter(
     (s) => !(s.startDate === startDate && s.endDate === endDate)
   );
   schedules.push(schedule);
-  saveSchedules(schedules);
+  await saveSchedules(schedules);
   return NextResponse.json(schedule);
 }

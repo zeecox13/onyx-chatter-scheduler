@@ -15,13 +15,13 @@ function parseDaysOff(v: unknown): number[] {
 }
 
 export async function GET() {
-  const chatters = getChatters();
+  const chatters = await getChatters();
   return NextResponse.json(chatters);
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const chatters = getChatters();
+  const chatters = await getChatters();
   const id = "c-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
   const now = new Date().toISOString();
   const chatter: Chatter = {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   };
   chatters.push(chatter);
   try {
-    saveChatters(chatters);
+    await saveChatters(chatters);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Save failed";
     return NextResponse.json(

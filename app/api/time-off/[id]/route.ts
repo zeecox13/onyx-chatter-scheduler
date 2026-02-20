@@ -22,7 +22,7 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  const requests = getTimeOffRequests();
+  const requests = await getTimeOffRequests();
   const idx = requests.findIndex((r) => r.id === id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const req = requests[idx];
@@ -40,11 +40,11 @@ export async function PATCH(
     reviewedAt: now,
     reviewedBy: "admin",
   };
-  saveTimeOffRequests(requests);
+  await saveTimeOffRequests(requests);
 
   if (status === "approved") {
-    const chatters = getChatters();
-    const schedules = getSchedules();
+    const [chatters, schedules] = await Promise.all([getChatters(), getSchedules()]);
+    const timeOffRequests = await getTimeOffRequests();
     const start = parseISO(req.startDate);
     const end = parseISO(req.endDate);
     let changed = false;
@@ -54,7 +54,7 @@ export async function PATCH(
         if (slot.chatterId !== req.chatterId) continue;
         const d = parseISO(slot.date);
         if (!isWithinInterval(d, { start, end })) continue;
-        const replacement = findReplacement(chatters, slot, req.chatterId);
+        const replacement = findReplacement(chatters, timeOffRequests, slot, req.chatterId);
         if (replacement) {
           schedule.slots[i] = { ...slot, chatterId: replacement.id };
           changed = true;
@@ -62,7 +62,7 @@ export async function PATCH(
       }
       if (changed) schedule.updatedAt = now;
     }
-    if (changed) saveSchedules(schedules);
+    if (changed) await saveSchedules(schedules);
   }
 
   return NextResponse.json(requests[idx]);

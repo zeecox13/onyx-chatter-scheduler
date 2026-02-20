@@ -35,8 +35,9 @@ Scheduling tool for the chat team: manage chatters, auto-generate schedules (wit
 
 ## Data
 
-- All data is stored under the `data/` folder as JSON (`chatters.json`, `schedules.json`, `timeoff.json`). No database required when running locally.
-- **GitHub & Vercel:** See [DEPLOY.md](DEPLOY.md) for pushing to GitHub and deploying to Vercel. Note: file-based storage does not persist on Vercel; use locally or add a database for production.
+- **Local:** Data is stored under the `data/` folder as JSON. No database required.
+- **Vercel (persistent):** To have chatters, schedules, and time-off persist on Vercel, add a Redis store and set either **KV_REST_API_URL** + **KV_REST_API_TOKEN** or **UPSTASH_REDIS_REST_URL** + **UPSTASH_REDIS_REST_TOKEN** in your project’s environment variables. Create a free Redis database at [Upstash](https://console.upstash.com), then in Vercel → Project → Settings → Environment Variables add the URL and token. Redeploy; “Add chatter” and “Load default team” will then persist.
+- **GitHub & Vercel:** See [DEPLOY.md](DEPLOY.md) for pushing to GitHub and deploying to Vercel.
 
 ## Pages
 

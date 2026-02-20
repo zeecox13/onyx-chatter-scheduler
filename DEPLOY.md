@@ -38,9 +38,13 @@ Use `--public` instead of `--private` if you want a public repo.
    - **Project → Settings → Environment Variables**
    - Add `RESEND_API_KEY` (and `EMAIL_FROM` if you use a custom from address).
 
-**Important:** The app stores chatters, schedules, and time-off in JSON files under `data/`. On Vercel’s serverless environment this **does not persist** between requests. The deployed app is fine for trying the UI, but for real use you should either:
+**Persistent data on Vercel:** The app supports **Redis** (Upstash or Vercel KV–compatible) so that chatters, schedules, and time-off persist. Without it, “Add chatter” and other saves do not persist on Vercel.
 
-- Run the app **locally** (`npm run dev`) and use it from your machine, or  
-- Add a database (e.g. [Vercel Postgres](https://vercel.com/storage/postgres) or [Vercel KV](https://vercel.com/storage/kv)) and switch the app to use it instead of file storage.
+1. Create a free Redis database at [Upstash Console](https://console.upstash.com).
+2. In your Vercel project → **Settings → Environment Variables**, add:
+   - `KV_REST_API_URL` = your Upstash REST URL (e.g. `https://xx.upstash.io`)
+   - `KV_REST_API_TOKEN` = your Upstash REST token  
+   (Or use `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.)
+3. Redeploy. After that, “Add chatter” and “Load default team” will persist.
 
 After each deploy, Vercel gives you a URL like `https://onyx-chatter-scheduler-xxx.vercel.app`.

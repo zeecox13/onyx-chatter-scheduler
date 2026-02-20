@@ -6,8 +6,7 @@ import {
   isWithinInterval,
   getDay,
 } from "date-fns";
-import type { Chatter, Schedule, ScheduleSlot, ShiftId, GroupId } from "./types";
-import { getTimeOffRequests } from "./store";
+import type { Chatter, ScheduleSlot, ShiftId, GroupId, TimeOffRequest } from "./types";
 
 /** SPH weight: below 10 = minimal, below 25 = less, 25–30 = normal, 30+ = more */
 function sphWeight(sph: number): number {
@@ -31,13 +30,13 @@ function isOff(c: Chatter, date: Date): boolean {
 }
 
 /** Get chatters who are on approved time off for this date */
-function getTimeOffChatterIds(date: string): Set<string> {
-  const requests = getTimeOffRequests().filter(
+function getTimeOffChatterIds(requests: TimeOffRequest[], date: string): Set<string> {
+  const approved = requests.filter(
     (r) => r.status === "approved" && r.startDate && r.endDate
   );
   const d = parseISO(date);
   const ids = new Set<string>();
-  for (const r of requests) {
+  for (const r of approved) {
     const start = parseISO(r.startDate);
     const end = parseISO(r.endDate);
     if (isWithinInterval(d, { start, end })) ids.add(r.chatterId);
@@ -48,6 +47,7 @@ function getTimeOffChatterIds(date: string): Set<string> {
 /** Build list of (chatter, weight) for a shift+group, sorted by weight desc; exclude off and time-off. */
 function candidates(
   chatters: Chatter[],
+  timeOffRequests: TimeOffRequest[],
   date: Date,
   shift: ShiftId,
   group: GroupId | null,
@@ -56,7 +56,7 @@ function candidates(
 ): Array<{ chatter: Chatter; weight: number }> {
   const dayOfWeek = getDay(date);
   const dateStr = format(date, "yyyy-MM-dd");
-  const onTimeOff = getTimeOffChatterIds(dateStr);
+  const onTimeOff = getTimeOffChatterIds(timeOffRequests, dateStr);
 
   const list: Array<{ chatter: Chatter; weight: number }> = [];
   for (const c of chatters) {
@@ -75,6 +75,7 @@ function candidates(
 /** For night shift we don't care about group; for day/swing we need one per group. */
 export function generateSchedule(
   chatters: Chatter[],
+  timeOffRequests: TimeOffRequest[],
   startDate: string,
   endDate: string
 ): ScheduleSlot[] {
@@ -90,6 +91,7 @@ export function generateSchedule(
     // Night: 1 person (any group; we use best accounts)
     const nightCands = candidates(
       chatters,
+      timeOffRequests,
       d,
       "night",
       null,
@@ -107,7 +109,7 @@ export function generateSchedule(
           c.fillInOnly &&
           canWorkShift(c, "night") &&
           canWorkDay(c, dayOfWeek) &&
-          !getTimeOffChatterIds(dateStr).has(c.id)
+          !getTimeOffChatterIds(timeOffRequests, dateStr).has(c.id)
       );
       if (fillIn.length > 0) {
         slots.push({
@@ -123,6 +125,7 @@ export function generateSchedule(
     for (const g of [1, 2, 3] as GroupId[]) {
       const dayCands = candidates(
         chatters,
+        timeOffRequests,
         d,
         "day",
         g,
@@ -144,7 +147,7 @@ export function generateSchedule(
             (c.fillInOnly || c.group === g) &&
             canWorkShift(c, "day") &&
             canWorkDay(c, dayOfWeek) &&
-            !getTimeOffChatterIds(dateStr).has(c.id) &&
+            !getTimeOffChatterIds(timeOffRequests, dateStr).has(c.id) &&
             !usedThisDay.has(c.id)
         );
         if (fillIn.length > 0) {
@@ -163,6 +166,7 @@ export function generateSchedule(
     for (const g of [1, 2, 3] as GroupId[]) {
       const swingCands = candidates(
         chatters,
+        timeOffRequests,
         d,
         "swing",
         g,
@@ -184,7 +188,7 @@ export function generateSchedule(
             (c.fillInOnly || c.group === g) &&
             canWorkShift(c, "swing") &&
             canWorkDay(c, dayOfWeek) &&
-            !getTimeOffChatterIds(dateStr).has(c.id) &&
+            !getTimeOffChatterIds(timeOffRequests, dateStr).has(c.id) &&
             !usedThisDay.has(c.id)
         );
         if (fillIn.length > 0) {
@@ -207,6 +211,7 @@ export function generateSchedule(
 /** Find a replacement for a slot (e.g. after time off approval). Same rules, exclude current assignee. */
 export function findReplacement(
   chatters: Chatter[],
+  timeOffRequests: TimeOffRequest[],
   slot: ScheduleSlot,
   excludeChatterId: string
 ): Chatter | null {
@@ -216,6 +221,7 @@ export function findReplacement(
   const group = slot.shift === "night" ? null : (slot.group ?? 1);
   const cands = candidates(
     chatters,
+    timeOffRequests,
     date,
     slot.shift,
     group,
@@ -228,7 +234,7 @@ export function findReplacement(
       c.fillInOnly &&
       canWorkShift(c, slot.shift) &&
       canWorkDay(c, dayOfWeek) &&
-      !getTimeOffChatterIds(slot.date).has(c.id)
+      !getTimeOffChatterIds(timeOffRequests, slot.date).has(c.id)
   );
   return fillIn.length > 0 ? fillIn[0] : null;
 }
