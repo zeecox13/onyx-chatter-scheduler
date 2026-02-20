@@ -5,6 +5,7 @@ import { format, parseISO, addMonths, startOfMonth, endOfMonth, setDate } from "
 import type { Schedule as ScheduleType, ScheduleSlot } from "@/lib/types";
 import type { Chatter } from "@/lib/types";
 import { SHIFT_LABELS, GROUP_LABELS } from "@/lib/types";
+import { DEFAULT_CHATTER_NAMES } from "@/lib/default-chatters";
 
 export default function SchedulePage() {
   const [schedules, setSchedules] = useState<ScheduleType[]>([]);
@@ -33,11 +34,13 @@ export default function SchedulePage() {
         useCustom && customRange.start && customRange.end
           ? { startDate: customRange.start, endDate: customRange.end }
           : {};
-      await fetch("/api/schedule", {
+      const res = await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const data = await res.json();
+      if (data.id) setSchedules((prev) => [...prev.filter((s) => s.id !== data.id), data]);
       load();
     } finally {
       setGenerating(false);
@@ -69,7 +72,7 @@ export default function SchedulePage() {
     load();
   };
 
-  const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? id;
+  const chatterName = (id: string) => chatters.find((c) => c.id === id)?.name ?? DEFAULT_CHATTER_NAMES[id] ?? id;
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChatters, getSchedules, getTimeOffRequests, saveSchedules } from "@/lib/store";
+import { DEFAULT_CHATTERS } from "@/lib/default-chatters";
 import { generateSchedule } from "@/lib/scheduler";
 import { addMonths, startOfMonth, endOfMonth, setDate, format } from "date-fns";
 
@@ -40,11 +41,12 @@ export async function POST(request: NextRequest) {
     startDate = format(startOfMonth(next), "yyyy-MM-dd");
     endDate = format(setDate(next, 15), "yyyy-MM-dd");
   }
-  const [chatters, timeOffRequests, schedulesExisting] = await Promise.all([
+  const [chattersFromStore, timeOffRequests, schedulesExisting] = await Promise.all([
     getChatters(),
     getTimeOffRequests(),
     getSchedules(),
   ]);
+  const chatters = chattersFromStore.length > 0 ? chattersFromStore : DEFAULT_CHATTERS;
   const slots = generateSchedule(chatters, timeOffRequests, startDate, endDate);
   const id = "s-" + Date.now();
   const now = new Date().toISOString();
@@ -60,6 +62,10 @@ export async function POST(request: NextRequest) {
     (s) => !(s.startDate === startDate && s.endDate === endDate)
   );
   schedules.push(schedule);
-  await saveSchedules(schedules);
+  try {
+    await saveSchedules(schedules);
+  } catch {
+    // e.g. Vercel without Redis – still return the generated schedule so the UI can show it
+  }
   return NextResponse.json(schedule);
 }

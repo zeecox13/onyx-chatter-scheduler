@@ -121,7 +121,7 @@ export default function ChattersPage() {
         </div>
       </div>
       <p className="text-sm text-stone-500">
-        To save on Vercel: add KV_REST_API_URL and KV_REST_API_TOKEN (from console.upstash.com) in Vercel Project Settings → Environment Variables, then redeploy. Use “Load default team” to restore Adebayo, Sheila, Yorkshare, Mary, Mae, Monah, Jenny, Akans, Owen, and Life. For lasting data, run locally (<code className="rounded bg-stone-700 px-1">npm run dev</code>).
+        On Vercel, saving new chatters is not available. Use “Load default team” to restore the list. Schedule generation always uses the same default team. For lasting data, run locally (<code className="rounded bg-stone-700 px-1">npm run dev</code>).
       </p>
 
       {showAdd && (
