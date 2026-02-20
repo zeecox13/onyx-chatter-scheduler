@@ -87,9 +87,14 @@ export default function ChattersPage() {
   const loadDefaultTeam = async (replace: boolean) => {
     const res = await fetch(`/api/seed?replace=${replace}`, { method: "POST" });
     const data = await res.json();
-    if (!res.ok) alert(data.message || data.error || "Failed to load team.");
-    else alert(data.message || "Done.");
-    load();
+    if (!res.ok) {
+      alert(data.message || data.error || "Failed to load team.");
+      load();
+      return;
+    }
+    if (Array.isArray(data.chatters)) setChatters(data.chatters);
+    else load();
+    alert(data.message || "Done.");
   };
 
   const toggleShift = (arr: ShiftId[], shift: ShiftId) => {

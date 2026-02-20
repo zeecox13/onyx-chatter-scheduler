@@ -38,12 +38,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: replace ? "Replaced with default team (10 chatters)." : "Loaded default team (10 chatters).",
       count: chatters.length,
+      chatters,
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Save failed";
-    return NextResponse.json(
-      { error: msg, message: "Could not save (e.g. on Vercel data does not persist). Run the app locally for saving." },
-      { status: 500 }
-    );
+  } catch {
+    // e.g. Vercel without Redis – still return the list so the UI can show it for this session
+    return NextResponse.json({
+      message: "Loaded default team (10 chatters). Not saved on this server—list will reset on refresh.",
+      count: chatters.length,
+      chatters,
+    });
   }
 }
