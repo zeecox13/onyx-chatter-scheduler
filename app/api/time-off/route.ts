@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChatters, getTimeOffRequests, saveTimeOffRequests } from "@/lib/store";
-import { sendTimeOffNotification } from "@/lib/email";
 
 const NOTIFY_EMAIL = "zee@onyxspire.com";
 
@@ -40,6 +39,8 @@ export async function POST(request: NextRequest) {
   requests.push(req);
   saveTimeOffRequests(requests);
 
+  // Dynamic import so Resend is not loaded at build time (avoids "Missing API key" when env is unset)
+  const { sendTimeOffNotification } = await import("@/lib/email");
   await sendTimeOffNotification({
     chatterName: chatter.name,
     startDate: req.startDate,
